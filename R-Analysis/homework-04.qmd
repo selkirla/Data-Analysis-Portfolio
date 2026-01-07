@@ -1,0 +1,254 @@
+---
+title: "Homework-04"
+subtitle: "STAT 5732: Introduction to R for Data Science I"
+institute: The Ohio State University
+author: "Selin Kirbas"
+date: 2025-04-04
+execute:
+    echo: true
+knitr: 
+    opts_chunk:
+        message: false
+        warning: false
+format: 
+    html:
+        toc: true
+        embed-resources: true
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(nycflights13)
+```
+
+# Exercises
+
+## R4DS 25.2.5
+
+### Exercise 1 
+
+#### Question
+Practice turning the following code snippets into functions. Think about what each function does. What would you call it? How many arguments does it need?
+
+```{r, eval=FALSE}
+mean(is.na(x))
+mean(is.na(y))
+mean(is.na(z))
+
+x / sum(x, na.rm = TRUE)
+y / sum(y, na.rm = TRUE)
+z / sum(z, na.rm = TRUE)
+
+round(x / sum(x, na.rm = TRUE) * 100, 1)
+round(y / sum(y, na.rm = TRUE) * 100, 1)
+round(z / sum(z, na.rm = TRUE) * 100, 1)
+```
+
+#### Solution
+
+```{r}
+# Function to calculate proportion of NA values
+prop_na <- function(x) {
+  mean(is.na(x))
+}
+
+# Test
+test_vector <- c(1, 2, NA, 4, NA)
+prop_na(test_vector)
+```
+
+The first function calculates the proportion of missing values in a vector, so I would call it prop_na, & it needs one argument, which is the vector to analyze.
+
+```{r}
+# Function to normalize a vector
+normalize <- function(x) {
+  x / sum(x, na.rm = TRUE)
+}
+
+# Test
+test_vector <- c(1, 2, 3, 4, NA)
+normalize(test_vector)
+```
+
+The second function normalizes values in a vector by dividing each element by the sum of all non-NA values, so I would call it normalize, & it needs one argument, which is the vector to normalize.
+
+```{r}
+# Function to calculate % of total with rounding
+percent_of_total <- function(x, digits = 1) {
+  round(x / sum(x, na.rm = TRUE) * 100, digits)
+}
+
+# Test
+test_vector <- c(10, 20, 30, 40, NA)
+percent_of_total(test_vector)
+```
+
+The third function calculates each value as a percentage of the total, so I would all it percent_of_total & it needs one argument, which is the vector, and can also use another (optional) argument, which is digits for rounding.
+
+### Exercise 2
+
+#### Question
+In the second variant of rescale01(), infinite values are left unchanged. Can you rewrite rescale01() so that -Inf is mapped to 0, and Inf is mapped to 1?
+
+#### Solution
+
+The original rescale01() function scales values to be between 0 and 1, so I'm going to make it so it can handle infinite values:
+
+```{r}
+# CHanged rescale01 function to handle infinite values
+rescale01 <- function(x) {
+  # Replace infinite values first
+  x[x == -Inf] <- 0
+  x[x == Inf] <- 1
+  
+  # Scale finite values
+  rng <- range(x, na.rm = TRUE, finite = TRUE)
+  (x - rng[1]) / (rng[2] - rng[1])
+}
+
+# Test
+test_vector <- c(-Inf, 1, 2, 5, 10, Inf)
+rescale01(test_vector)
+```
+
+This function now maps -Inf to 0 and Inf to 1, then scales all other values to be between 0 and 1 based on the range of finite values.
+
+### Exercise 5
+
+#### Question
+Write `both_na()`, a summary function that takes two vectors of the same length and returns the number of positions that have an NA in both vectors.
+
+#### Solution
+
+```{r}
+both_na <- function(x, y) {
+  # Check if vectors have same length
+  if (length(x) != length(y)) {
+    stop("Both vectors must have the same length")
+  }
+  
+  # Count positions where both have NA
+  sum(is.na(x) & is.na(y))
+}
+
+# Test
+vector1 <- c(1, NA, 3, NA, 5)
+vector2 <- c(NA, NA, 3, 4, NA)
+both_na(vector1, vector2)
+```
+
+The function takes two vectors and returns the count of positions where both vectors have NA values. The function first checks if the vectors have the same length, then counts where both have NA.
+
+## R4DS 25.3.5
+
+### Exercise 1.4
+
+#### Question
+Using the datasets from nycflights13, write a function that:
+
+Summarizes the weather to compute the minimum, mean, and maximum, of a user supplied variable:
+
+```{r, eval=FALSE}
+weather |> summarize_weather(temp)
+```
+
+#### Solution
+
+```{r}
+# Function to summarize weather data
+summarize_weather <- function(data, var) {
+  data |>
+    summarize(
+      min = min({{ var }}, na.rm = TRUE),
+      mean = mean({{ var }}, na.rm = TRUE),
+      max = max({{ var }}, na.rm = TRUE)
+    )
+}
+
+# Example
+weather |> summarize_weather(humid)
+```
+
+The function uses tidy evaluation to summarize a user supplied variable from the weather dataset. It calculates the min, mean, and max values of the variable while also handling missing values.
+
+### Exercise 2
+
+#### Question
+For each of the following functions list all arguments that use tidy evaluation and describe whether they use data-masking or tidy-selection: `distinct()`, `count()`, `group_by()`, `rename_with()`, `slice_min()`, `slice_sample()`.
+
+#### Solution
+
+1. **distinct()**
+   - Arguments using tidy evaluation: `...` 
+   - Type: Data-masking (uses column values from the data frame)
+
+2. **count()**
+   - Arguments using tidy evaluation: `...` 
+   - Type: Data-masking (uses column values from the data frame)
+
+3. **group_by()**
+   - Arguments using tidy evaluation: `...`
+   - Type: Data-masking (uses column values from the data frame)
+
+4. **rename_with()**
+   - Arguments using tidy evaluation: `.cols`
+   - Type: Tidy-selection (uses column names/positions)
+
+5. **slice_min()**
+   - Arguments using tidy evaluation: `order_by`
+   - Type: Data-masking (uses column values from the data frame)
+
+6. **slice_sample()**
+   - Arguments using tidy evaluation: `weight_by`
+   - Type: Data-masking (uses column values from the data frame)
+
+## R4DS 25.4.4
+
+### Question
+
+Build up a rich plotting function by incrementally implementing each of the steps below:
+
+1. Draw a scatterplot given dataset and x and y variables.
+2. Add a line of best fit (i.e. a linear model with no standard errors).
+3. Add a title.
+
+### Solution
+
+```{r}
+# Basic scatterplot function
+plot_scatter_basic <- function(data, x_var, y_var) {
+  ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }})) +
+    geom_point()
+}
+
+# Show function
+plot_scatter_basic(flights, dep_delay, arr_delay)
+
+# Add line of best fit
+plot_scatter_with_trend <- function(data, x_var, y_var) {
+  ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }})) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE)
+}
+
+# Show with trend line
+plot_scatter_with_trend(flights, dep_delay, arr_delay)
+
+# Function with title
+plot_scatter <- function(data, x_var, y_var, title = NULL) {
+  # Create default title if none provided
+  if (is.null(title)) {
+    x_name <- rlang::as_name(rlang::enquo(x_var))
+    y_name <- rlang::as_name(rlang::enquo(y_var))
+    title <- paste("Relationship between", x_name, "and", y_name)
+  }
+  
+  ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }})) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", se = FALSE) +
+    labs(title = title)
+}
+
+# Final function with default title
+plot_scatter(flights, dep_delay, arr_delay)
+```

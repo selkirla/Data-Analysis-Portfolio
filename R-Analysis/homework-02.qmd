@@ -1,0 +1,214 @@
+---
+title: "Homework-02"
+subtitle: "STAT 5732: Introduction to R for Data Science I"
+institute: The Ohio State University
+author: "Selin Kirbas"
+date: 2025-03-21
+execute:
+    echo: true
+knitr: 
+    opts_chunk:
+        message: false
+        warning: false
+format: 
+    html:
+        toc: true
+        embed-resources: true
+---
+
+```{r setup, include=FALSE}
+library(nycflights13)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+```
+
+## R4DS 17.3.4
+
+### Exercise 2
+
+#### Question
+Compare `dep_time`, `sched_dep_time` and `dep_delay`. Are they consistent? Explain your findings.
+
+#### Solution
+
+```{r}
+# Look at the first few rows to understand the data
+flights %>% 
+  select(dep_time, sched_dep_time, dep_delay) %>% 
+  head(10)
+
+# Create a calculated delay to compare with the provided dep_delay
+flights %>%
+  mutate(
+    # Convert times to minutes since midnight
+    dep_time_mins = (dep_time %/% 100) * 60 + (dep_time %% 100),
+    sched_dep_time_mins = (sched_dep_time %/% 100) * 60 + (sched_dep_time %% 100),
+    # Calculate delay as difference between actual and scheduled
+    calculated_delay = dep_time_mins - sched_dep_time_mins,
+    # Handle overnight flights (negative delays)
+    calculated_delay = ifelse(calculated_delay < -800, calculated_delay + 24*60, calculated_delay),
+    # Check consistency
+    is_consistent = dep_delay == calculated_delay
+  ) %>%
+  select(dep_time, sched_dep_time, dep_delay, calculated_delay, is_consistent) %>%
+  filter(!is_consistent) %>%
+  head(10)
+```
+
+The data from the `dep_delay` and the difference between `dep_time` and `sched_dep_time` are not consistent. These inconsistencies happen with flights that depart around midnight. The issue is that `dep_time` and `sched_dep_time` are stored as integers in HHMM format and don't account for date changes. When a flight is scheduled to depart before midnight but actually departs after midnight, the calculated delay can be off because we aren't accounting for the date change. The `dep_delay` field correctly handles this, which means it was calculated with the actual date information.
+
+### Exercise 5
+
+#### Question
+On what day of the week should you leave if you want to minimise the chance of a delay?
+
+#### Solution
+
+```{r}
+# Use make_datetime_100 function to convert
+make_datetime_100 <- function(year, month, day, time) {
+  make_datetime(year, month, day, time %/% 100, time %% 100)
+}
+
+# Add datetime columns and extract weekday
+flights_dt <- flights %>%
+  mutate(
+    dep_datetime = make_datetime_100(year, month, day, dep_time),
+    sched_dep_datetime = make_datetime_100(year, month, day, sched_dep_time),
+    weekday = wday(sched_dep_datetime, label = TRUE)
+  )
+
+# Calculate proportion of delayed flights by weekday
+delay_by_weekday <- flights_dt %>%
+  group_by(weekday) %>%
+  summarise(
+    total_flights = n(),
+    delayed_flights = sum(dep_delay > 0, na.rm = TRUE),
+    proportion_delayed = delayed_flights / total_flights
+  ) %>%
+  arrange(proportion_delayed)
+
+# Plot results
+ggplot(delay_by_weekday, aes(x = weekday, y = proportion_delayed)) +
+  geom_col() +
+  labs(title = "Proportion of Delayed Flights by Day of Week",
+       x = "Day of Week",
+       y = "Proportion Delayed")
+
+delay_by_weekday
+```
+
+If you want to minimize the chance of experiencing a delay, you should schedule your flight on a Saturday since the analysis shows that Saturday has the lowest proportion of delayed flights.
+
+### Exercise 6
+
+#### Question
+What makes the distribution of `diamonds$carat` and `flights$sched_dep_time` similar?
+
+#### Solution
+
+```{r}
+# Look at distributions
+p1 <- ggplot(diamonds, aes(x = carat)) +
+  geom_histogram(binwidth = 0.01) +
+  labs(title = "Distribution of Diamond Carats")
+
+p2 <- ggplot(flights, aes(x = sched_dep_time)) +
+  geom_histogram(binwidth = 10) +
+  labs(title = "Distribution of Scheduled Departure Times")
+
+p1
+p2
+```
+
+Both distributions show patterns with regular spikes at certain values. For `diamonds$carat`, there are spikes at common round numbers (0.5, 1.0, 1.5). This reflects human preference for round numbers when sizing diamonds.
+
+`flights$sched_dep_time` shows spikes at round-hour times (900, 1000, 1100) and half-hour times (930, 1030, 1130). This reflects airline scheduling preferences to depart at "round" times that are easy for humans to remember and plan around.
+
+Both distributions show how human preferences for round numbers affect these objective measurements, creating regular patterns in the data rather than smooth continuous distributions.
+
+### Exercise 7
+
+#### Question
+Confirm our hypothesis that the early departures of flights in minutes 20-30 and 50-60 are caused by scheduled flights that leave early. Hint: create a binary variable that tells you whether or not a flight was delayed.
+
+#### Solution
+
+```{r}
+# Get departure minute
+flights_with_minutes <- flights %>%
+  mutate(
+    dep_minute = dep_time %% 100,
+    sched_dep_minute = sched_dep_time %% 100,
+    early = dep_delay < 0
+  )
+
+# Count early vs delayed flights by minute
+departure_stats <- flights_with_minutes %>%
+  filter(!is.na(dep_minute)) %>%
+  group_by(dep_minute) %>%
+  summarise(
+    total = n(),
+    early_departures = sum(early),
+    prop_early = early_departures / total
+  )
+
+# Plot proportion of early departures by minute
+ggplot(departure_stats, aes(x = dep_minute, y = prop_early)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Proportion of Early Departures by Minute",
+       x = "Departure Minute",
+       y = "Proportion Departing Early")
+
+# Look at minutes 20-30 and 50-60
+flights_with_minutes %>%
+  filter(dep_minute >= 20 & dep_minute <= 30 | 
+         dep_minute >= 50 & dep_minute <= 59) %>%
+  group_by(sched_dep_minute) %>%
+  summarise(
+    count = n(),
+    early_count = sum(early),
+    early_prop = early_count / count
+  ) %>%
+  arrange(sched_dep_minute)
+```
+
+This confirms the hypothesis. Flights that depart in minutes 20-30 and 50-60 have a higher proportion of early departures. 
+
+## R4DS 17.4.4
+
+### Exercise 1
+
+#### Question
+Explain `days(!overnight)` and `days(overnight)` to someone who has just started learning R. What is the key fact you need to know?
+
+#### Solution
+
+In R, logical values convert to numbers in calculations so TRUE becomes 1 and FALSE becomes 0. `days(overnight)` gives one day if overnight is TRUE and zero days if FALSE. `days(!overnight)` gives zero days if overnight is TRUE and one day if FALSE.
+
+### Exercise 3
+
+#### Question
+Write a function that given your birthday (as a date), returns how old you are in years.
+
+#### Solution
+
+```{r}
+# Using lubridate's time period functions
+calculate_age_interval <- function(birthday) {
+  today <- Sys.Date()
+  # Create an interval from birthday to today
+  age_interval <- interval(birthday, today)
+  # Convert to years
+  age_years <- age_interval / years(1)
+  # Return the floor of the age in years
+  return(floor(age_years))
+}
+
+my_birthday <- ymd("2002-06-04")
+calculate_age_interval(my_birthday)
+```
+
+This function calculates age by creating a time interval between the birthday and today's date, then converts this interval to years using lubridate's time period functions, which makes sure we get completed years of age.

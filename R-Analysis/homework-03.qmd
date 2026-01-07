@@ -1,0 +1,245 @@
+---
+title: "Homework-03"
+subtitle: "STAT 5732: Introduction to R for Data Science I"
+institute: The Ohio State University
+author: "Selin Kirbas"
+date: 2025-03-31
+execute:
+    echo: true
+knitr: 
+    opts_chunk:
+        message: false
+        warning: false
+format: 
+    html:
+        toc: true
+        embed-resources: true
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(nycflights13)
+library(lubridate)
+```
+
+# Exercises
+
+## R4DS 19.3.4
+
+### Exercise 1 
+
+#### Question
+Find the 48 hours (over the course of the whole year) that have the worst delays. Cross-reference it with the `weather` data. Can you see any patterns?
+
+#### Solution
+
+```{r}
+# Calculate average departure delay by date & hour
+worst_hours <- flights %>%
+  filter(!is.na(dep_delay)) %>%
+  group_by(year, month, day, hour) %>%
+  summarize(
+    avg_dep_delay = mean(dep_delay),
+    n_flights = n()
+  ) %>%
+  # See hours with a reasonable number of flights
+  filter(n_flights >= 10) %>%
+  # Sort by average delay in descending order
+  arrange(desc(avg_dep_delay)) %>%
+  # Get top 48 worst hours
+  head(48)
+
+# Show worst hours
+worst_hours
+```
+
+Looking at the weather data:
+
+```{r}
+# Make datetime from components
+make_datetime_from_components <- function(year, month, day, hour) {
+  make_datetime(year, month, day, hour)
+}
+
+# Add datetime column to worst_hours
+worst_hours <- worst_hours %>%
+  mutate(datetime = make_datetime_from_components(year, month, day, hour))
+
+# Get weather data for worst hours
+worst_hours_weather <- weather %>%
+  # Create datetime column in weather
+  mutate(datetime = make_datetime_from_components(year, month, day, hour)) %>%
+  # Join with worst hours
+  inner_join(worst_hours, by = c("datetime", "year", "month", "day", "hour")) %>%
+  # Select needed columns
+  select(datetime, origin, temp, humid, precip, visib, wind_speed, wind_dir, avg_dep_delay)
+
+# Show weather during the worst delay hours
+worst_hours_weather
+```
+
+Looking if there are any patterns related to weather conditions:
+
+```{r}
+# Look at precipitation during worst delay hours
+ggplot(worst_hours_weather, aes(x = precip, y = avg_dep_delay)) +
+  geom_point(aes(color = origin)) +
+  geom_smooth(method = "lm") +
+  labs(title = "Precipitation vs Delay in Worst 48 Hours",
+       x = "Precipitation (inches)",
+       y = "Average Departure Delay (minutes)")
+
+# Look at visibility during worst delay hours
+ggplot(worst_hours_weather, aes(x = visib, y = avg_dep_delay)) +
+  geom_point(aes(color = origin)) +
+  geom_smooth(method = "lm") +
+  labs(title = "Visibility vs Delay in Worst 48 Hours",
+       x = "Visibility (miles)",
+       y = "Average Departure Delay (minutes)")
+
+# Look at wind speed during worst delay hours
+ggplot(worst_hours_weather, aes(x = wind_speed, y = avg_dep_delay)) +
+  geom_point(aes(color = origin)) +
+  geom_smooth(method = "lm") +
+  labs(title = "Wind Speed vs Delay in Worst 48 Hours",
+       x = "Wind Speed (mph)",
+       y = "Average Departure Delay (minutes)")
+```
+
+The worst flight delays usually happened during winter (Dec-Feb) and summer (Jun-Jul) months. We can see clear weather-related patterns: higher precipitation, lower visibility, and stronger winds all correlate with longer delays. These conditions significantly impact flight delays, especially at airports like Newark.
+
+### Exercise 2 
+
+#### Question
+Imagine you've found the top 10 most popular destinations using this code:
+
+```{r, eval=FALSE}
+top_dest <- flights2 |>
+count(dest, sort = TRUE) |>
+head(10)
+```
+
+How can you find all flights to those destinations?
+
+#### Solution
+
+To find all flights to the top 10 most popular destinations, I'll make the `flights2` dataset and then identify the top 10 destinations. Then I'll use a semi-join to see only the flights to those destinations:
+
+```{r}
+# Create flights2 dataset
+flights2 <- flights %>% 
+  select(year:day, hour, origin, dest, tailnum, carrier)
+
+# Find top 10 destinations
+top_dest <- flights2 %>%
+  count(dest, sort = TRUE) %>%
+  head(10)
+
+# Show top destinations
+top_dest
+
+# Use semi-join
+flights_to_top_dest_semijoin <- flights2 %>%
+  semi_join(top_dest, by = "dest")
+
+# Look at sample of flights to top destinations
+flights_to_top_dest_semijoin %>%
+  sample_n(10)
+```
+
+To find all flights to the top 10 most popular destinations, I used a semi-join to filter the `flights2` dataset, keeping only flights where the destination matches one in the `top_dest` table. 
+
+## Additional Exercises
+
+### Exercise 3
+
+#### Question
+Is there a relationship between the age of a plane and its delays?
+
+#### Solution
+
+To see if there is a relationship between the age of a plane and its delays, I'm going to take the year of manufacture from the `planes` dataset, calculate the age of each plane at the time of the flight in 2013, join this with the flights data, and see the relationship between plane age and delays
+
+```{r}
+# Create dataset with plane age
+plane_ages <- planes %>%
+  select(tailnum, year) %>%
+  # Filter out planes with missing manufacture year
+  filter(!is.na(year)) %>%
+  # Calculate plane age as of 2013
+  mutate(plane_age = 2013 - year)
+
+# Join plane ages with flight data and delays
+flights_with_age <- flights %>%
+  inner_join(plane_ages, by = "tailnum") %>%
+  # Show relevant delay information
+  select(tailnum, dep_delay, arr_delay, plane_age) %>%
+  # Remove flights with missing delay information
+  filter(!is.na(dep_delay), !is.na(arr_delay))
+
+# Calculate average delays by plane age
+delay_by_age <- flights_with_age %>%
+  group_by(plane_age) %>%
+  summarise(
+    count = n(),
+    avg_dep_delay = mean(dep_delay),
+    avg_arr_delay = mean(arr_delay)
+  ) %>%
+  # Remove ages with small number of flights
+  filter(count >= 50)
+
+# Show relationship
+ggplot(delay_by_age, aes(x = plane_age, y = avg_dep_delay)) +
+  geom_point(aes(size = count)) +
+  geom_smooth(method = "loess") +
+  labs(title = "Relationship Between Plane Age and Departure Delay",
+       x = "Plane Age (years)",
+       y = "Average Departure Delay (minutes)",
+       size = "Number of Flights")
+
+ggplot(delay_by_age, aes(x = plane_age, y = avg_arr_delay)) +
+  geom_point(aes(size = count)) +
+  geom_smooth(method = "loess") +
+  labs(title = "Relationship Between Plane Age and Arrival Delay",
+       x = "Plane Age (years)",
+       y = "Average Arrival Delay (minutes)",
+       size = "Number of Flights")
+
+# Check correlation
+cor.test(flights_with_age$plane_age, flights_with_age$dep_delay)
+cor.test(flights_with_age$plane_age, flights_with_age$arr_delay)
+```
+
+There's a slight positive correlation between plane age and delays, but this is very small. The trend isn't very linear since both very new planes (around 5 years) and older planes (around 25 years) show slightly longer delays than middle age planes. Small correlation coefficients show plane age isn't a major delay factor. Other variables like weather, airport traffic, and airline operations likely have stronger effects on a plane's delays.
+
+### Exercise 4
+
+#### Question
+Filter flights to only show flights with planes that have flown at least 100 flights.
+
+#### Solution
+
+To find flights with planes that have flown at least 100 flights, I'll count the number of flights per plane and then filter the dataset to include only those planes:
+
+```{r}
+# Count flights per plane
+flights_per_plane <- flights %>%
+  # Avoid counting flights with missing tailnumbers
+  filter(!is.na(tailnum)) %>%
+  count(tailnum) %>%
+  filter(n >= 100)
+
+# See how many planes flew at least 100 flights
+flights_per_plane %>%
+  summarize(count = n())
+
+# Filter flights to include only those with planes that flew at least 100 flights
+frequent_flyer_flights <- flights %>%
+  semi_join(flights_per_plane, by = "tailnum")
+
+# Show result
+dim(flights)
+dim(frequent_flyer_flights)
+```
+
+I filtered the flights dataset to include only flights operated by planes that have flown at least 100 flights in 2013. Filtering removed flights with planes that had fewer than 100 flights, which gave a set that represents only the more frequently used planes. This was to make sure I was looking at planes with enough data points for a reliable analysis.

@@ -1,0 +1,305 @@
+---
+title: "Final Project"
+subtitle: "STAT 5732: Introduction to R for Data Science I"
+institute: The Ohio State University
+author: "Selin Kirbas"
+date: 2025-04-21
+execute:
+    echo: true
+knitr: 
+    opts_chunk:
+        message: false
+        warning: false
+format: 
+    html:
+        toc: true
+        embed-resources: true
+---
+
+## Introduction and Data Prep
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(lubridate)
+library(scales)
+
+# Load datasets
+train <- read_csv("C:/Users/selin/Desktop/school/stat 5732/r-hw/final-project-datasets/train.csv")
+gas_prices <- read_csv("C:/Users/selin/Desktop/school/stat 5732/r-hw/final-project-datasets/gas_prices.csv")
+client <- read_csv("C:/Users/selin/Desktop/school/stat 5732/r-hw/final-project-datasets/client.csv")
+electricity_prices <- read_csv("C:/Users/selin/Desktop/school/stat 5732/r-hw/final-project-datasets/electricity_prices.csv")
+forecast_weather <- read_csv("C:/Users/selin/Desktop/school/stat 5732/r-hw/final-project-datasets/forecast_weather_.csv")
+historical_weather <- read_csv("C:/Users/selin/Desktop/school/stat 5732/r-hw/final-project-datasets/historical_weather_.csv")
+
+# Convert date/time columns to appropriate formats
+train <- train %>% mutate(datetime = ymd_hms(datetime))
+gas_prices <- gas_prices %>% 
+  mutate(origin_date = ymd(origin_date),
+         forecast_date = ymd(forecast_date))
+client <- client %>% mutate(date = ymd(date))
+electricity_prices <- electricity_prices %>% 
+  mutate(origin_date = ymd(origin_date),
+         forecast_date = ymd_hms(forecast_date))
+forecast_weather <- forecast_weather %>% 
+  mutate(origin_datetime = ymd_hms(origin_datetime),
+         forecast_datetime = ymd_hms(forecast_datetime))
+historical_weather <- historical_weather %>% 
+  mutate(datetime = ymd_hms(datetime))
+```
+
+Before I answered all the questions, I loaded the necessary packages as well as the six datasets. I then converted all date and time columns to proper date time formats using lubridate functions to make sure I was able to properly do time analysis.
+
+## Question 1
+
+Which weather conditions were most related to electricity prices? Use time in the analysis.
+
+```{r}
+# Module 3-3: Mutating Joins
+# Join historical weather data with electricity prices based on date
+weather_price_data <- historical_weather %>%
+  # Get date components to join with electricity prices
+  mutate(date_only = as_date(datetime),
+         hour = hour(datetime)) %>%
+  # Join with electricity prices
+  inner_join(electricity_prices %>% 
+               mutate(date_only = as_date(forecast_date),
+                      hour = hour(forecast_date)),
+             by = c("date_only", "hour", "data_block_id"))
+
+# Relationship between cloud cover and electricity prices
+cloud_price_relation <- weather_price_data %>%
+  group_by(cloudcover_total) %>%
+  summarize(avg_price = mean(euros_per_mwh, na.rm = TRUE),
+            count = n()) %>%
+  filter(count > 10)  # Filter to ensure reliable averages
+
+# Create visualization
+ggplot(cloud_price_relation, aes(x = cloudcover_total, y = avg_price)) +
+  geom_line(color = "blue", size = 1) +
+  geom_point(color = "red", size = 2) +
+  labs(title = "Relationship Between Cloud Cover and Electricity Prices",
+       x = "Total Cloud Cover (%)",
+       y = "Average Electricity Price (Euros/MWh)") +
+  theme_minimal() +
+  scale_y_continuous(labels = comma)
+```
+
+I used inner_join to merge datasets based on common values, which let me analyze both weather conditions and electricity prices.
+
+I focused on cloud cover as a weather condition and analyzed its relationship with electricity prices over time.
+The line plot shows the average electricity price against total cloud cover percentage. It helps identify any correlation between cloudiness and electricity prices, showing how weather conditions might influence energy costs.
+
+Based on the visualization, there isn't a simple, consistent trend (like linear increase or decrease) between total cloud cover and average electricity prices across the entire range. Prices change a lot across all cloud cover percentages, generally staying between 100-450 Euros/MWh. Several notable spikes appear throughout the graph, with the most prominent peaks happening around 25-30% cloud cover (reaching approximately 470 Euros/MWh) and again near 50% cloud cover (around 400 Euros/MWh). There are also smaller but significant peaks at 10%, 35%, and 75% cloud cover. This irregular pattern suggests that while cloud cover does influence electricity prices, the relationship isn't straightforward and is likely influenced by other factors instead of just cloud coverage.
+
+## Question 2
+
+What is the relationship between the forecasted weather and the historical weather? Given that weather predictions are available for many hours ahead of the forecasted time, can you identify the number of hours in advance at which there is a significant drop in accuracy.
+
+```{r}
+# Module 2-2: Date-Time Components
+# Prepare data by joining forecast and historical weather data
+weather_comparison <- forecast_weather %>%
+  # Select relevant columns for comparison
+  select(forecast_datetime, temperature, hours_ahead, data_block_id, latitude, longitude) %>%
+  # Rename for clarity in the joined dataset
+  rename(forecast_temp = temperature) %>%
+  # Join with historical data
+  inner_join(historical_weather %>%
+               select(datetime, temperature, data_block_id, latitude, longitude) %>%
+               rename(actual_temp = temperature),
+             by = c("forecast_datetime" = "datetime", 
+                    "data_block_id", "latitude", "longitude"))
+
+# Calculate temperature difference and analyze by hours ahead
+forecast_accuracy <- weather_comparison %>%
+  mutate(temp_diff = abs(forecast_temp - actual_temp)) %>%
+  group_by(hours_ahead) %>%
+  summarize(avg_diff = mean(temp_diff, na.rm = TRUE),
+            count = n()) %>%
+  filter(count > 10)  # Ensure reliable averages
+
+# Create visualization
+ggplot(forecast_accuracy, aes(x = hours_ahead, y = avg_diff)) +
+  geom_line(color = "blue", size = 1) +
+  geom_point(color = "red", size = 2) +
+  labs(title = "Weather Forecast Accuracy by Lead Time",
+       x = "Hours Ahead (Forecast Lead Time)",
+       y = "Average Temperature Difference (°C)") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(0, 48, 6))
+```
+
+I used lubridate functions to handle and manipulate date-time data, making sure there is accurate alignment of forecasted and historical weather data.
+
+I compared forecasted and historical temperatures to see forecast accuracy over different lead times.
+The line plot shows the average temperature difference between forecasted and historical data over various hours ahead. It shows the point where forecast accuracy significantly drops.
+
+The relationship between forecasted and historical weather, specifically temperature, shows a clear pattern of decreasing accuracy as the forecast lead time increases. The graph reveals several phases in forecast accuracy:
+For short-term forecasts (0-6 hours ahead), the average temperature difference remains low at around 0.7-0.8°C, representing the highest accuracy period. From 6 to 24 hours ahead, there's a steady decrease in accuracy, with the average error gradually increasing to about 2°C. A significant drop in accuracy occurs at the 24-hour mark, where the average temperature difference jumps to around 3.2°C. Between 24 and 42 hours, the accuracy slightly improves, with the error gradually decreasing to about 2.6°C. After 42 hours, another significant accuracy decline happens, with the error spiking to about 4°C at the 48-hour mark.
+
+This pattern suggests that one day forecasts (24 hours) and two day forecasts (48 hours) represent points where weather prediction accuracy significantly decreases, which is most likely because of the difficulty of longe range forecasting.
+
+## Question 4
+
+Are gas prices and electricity prices related? Does the date (for example month, day, year or a combination of month/day/year) matter? Also compare the accuracy of the forecasted gas prices versus the forecasted electrcity prices.
+
+```{r}
+# Module 1-8: Numeric Summaries
+# Prepare gas price data for comparison
+daily_gas_prices <- gas_prices %>%
+  # Calculate mean price for each forecast date
+  mutate(mean_gas_price = (lowest_price_per_mwh + highest_price_per_mwh)/2) %>%
+  group_by(forecast_date) %>%
+  summarize(avg_gas_price = mean(mean_gas_price, na.rm = TRUE),
+            price_range = mean(highest_price_per_mwh - lowest_price_per_mwh, na.rm = TRUE))
+
+# Prepare electricity price data
+daily_electricity_prices <- electricity_prices %>%
+  mutate(date_only = as_date(forecast_date)) %>%
+  group_by(date_only) %>%
+  summarize(avg_elec_price = mean(euros_per_mwh, na.rm = TRUE),
+            price_sd = sd(euros_per_mwh, na.rm = TRUE))
+
+# Plot 1: Compare gas and electricity prices
+ggplot() +
+  geom_line(data = daily_gas_prices, 
+            aes(x = forecast_date, y = avg_gas_price, color = "Gas"), size = 1) +
+  geom_line(data = daily_electricity_prices, 
+            aes(x = date_only, y = avg_elec_price, color = "Electricity"), size = 1) +
+  scale_color_manual(values = c("Gas" = "blue", "Electricity" = "red")) +
+  labs(title = "Gas and Electricity Prices Over Time",
+       x = "Date",
+       y = "Average Price (Euros/MWh)",
+       color = "Energy Type") +
+  theme_minimal() +
+  scale_y_continuous(labels = comma)
+
+# Plot 2: Compare price variability
+ggplot() +
+  geom_line(data = daily_gas_prices, 
+            aes(x = forecast_date, y = price_range, color = "Gas Price Range"), size = 1) +
+  geom_line(data = daily_electricity_prices, 
+            aes(x = date_only, y = price_sd, color = "Electricity Price SD"), size = 1) +
+  scale_color_manual(values = c("Gas Price Range" = "blue", "Electricity Price SD" = "red")) +
+  labs(title = "Price Variability: Gas vs. Electricity",
+       x = "Date",
+       y = "Price Variability Measure (Euros/MWh)",
+       color = "Metric") +
+  theme_minimal() +
+  scale_y_continuous(labels = comma)
+
+# For gas prices - calculate forecast accuracy
+gas_forecast_accuracy <- gas_prices %>%
+  # Only look at forecasts 1 day ahead
+  mutate(days_ahead = as.integer(as.numeric(forecast_date - origin_date))) %>%
+  filter(days_ahead == 1) %>%
+  # Calculate forecast uncertainty as percentage of price range to average price
+  mutate(
+    avg_price = (highest_price_per_mwh + lowest_price_per_mwh)/2,
+    forecast_uncertainty = (highest_price_per_mwh - lowest_price_per_mwh)/avg_price * 100
+  )
+
+# Summarize gas price forecasts
+gas_summary <- gas_forecast_accuracy %>%
+  summarize(
+    avg_uncertainty = mean(forecast_uncertainty, na.rm = TRUE),
+    median_uncertainty = median(forecast_uncertainty, na.rm = TRUE),
+    min_uncertainty = min(forecast_uncertainty, na.rm = TRUE),
+    max_uncertainty = max(forecast_uncertainty, na.rm = TRUE)
+  )
+
+# For electricity prices - direct calculation from raw data
+elec_daily_variation <- electricity_prices %>%
+  # Group by forecast date (each day)
+  mutate(forecast_day = as_date(forecast_date)) %>%
+  group_by(forecast_day) %>%
+  # Calculate daily change values
+  summarize(
+    daily_mean = mean(euros_per_mwh, na.rm = TRUE),
+    daily_sd = sd(euros_per_mwh, na.rm = TRUE),
+    daily_min = min(euros_per_mwh, na.rm = TRUE),
+    daily_max = max(euros_per_mwh, na.rm = TRUE),
+    daily_range = daily_max - daily_min,
+    # Calculate uncertainty as percentage of price range to mean price
+    uncertainty = (daily_range / daily_mean) * 100
+  )
+
+# Summarize electricity price variations
+elec_summary <- elec_daily_variation %>%
+  summarize(
+    avg_uncertainty = mean(uncertainty, na.rm = TRUE),
+    median_uncertainty = median(uncertainty, na.rm = TRUE),
+    min_uncertainty = min(uncertainty, na.rm = TRUE),
+    max_uncertainty = max(uncertainty, na.rm = TRUE)
+  )
+
+# Create a bar chart comparing average forecast uncertainty
+comparison_data <- data.frame(
+  energy_type = c("Gas Prices", "Electricity Prices"),
+  avg_uncertainty = c(gas_summary$avg_uncertainty, elec_summary$avg_uncertainty)
+)
+
+# Plot 3: Bar chart comparing forecast accuracy
+ggplot(comparison_data, aes(x = energy_type, y = avg_uncertainty, fill = energy_type)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  geom_text(aes(label = round(avg_uncertainty, 1)), vjust = -0.5, size = 4) +
+  scale_fill_manual(values = c("Gas Prices" = "blue", "Electricity Prices" = "red")) +
+  labs(title = "Forecast Uncertainty Comparison",
+       subtitle = "Gas vs Electricity Prices",
+       x = "",
+       y = "Average Forecast Uncertainty (%)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+I used summarize to calculate average prices and differences, providing a clear numeric summary of the relationship and forecast accuracy.
+
+The first graph shows average prices of gas (blue) and electricity (red) measured in Euros/MWh. Electricity prices span around 2000-2015 and gas prices are only visible for the 2020-2022 period. The second graph compares the standard deviation of electricity prices (red) and the price range of gas prices (blue). The bar chart shows the difference in forecast uncertainty between electricity and gas prices.
+
+Just based on the graph, it's difficult to establish a clear direct relationship between gas and electricity prices because the data for these two energy types appears in non overlapping time periods. Electricity prices (red line) are shown from 2000-2015, while gas prices (blue line) are only visible for the 2020-2022 period. What I do see is that both energy types experience significant price changes and large spikes, which means they may respond to similar market factors. Both reach peaks that are roughly 3-4 times their baseline levels during certain periods. Electricity prices spiked to around 500 €/MWh (from a baseline of ~100-150 €/MWh) around 2010, while gas prices peaked at about 270 €/MWh (from a baseline of ~50-75 €/MWh) in 2022. The similar pattern of significant changes and spikes suggests they might respond to similar underlying factors, but any significant relationship cannot be seen from just this graph.
+
+The date does matter for both gas and electricity prices. Electricity prices show greater changes with multiple spikes throughout the 2000-2015 period, meaning it may be changing as a result of seasonal demand changes, weather conditions, and market events. The gas price spike in 2022 shows how certain geopolitical events and specific time periods can significantly affect energy prices.
+
+Gas price forecasts are significantly more accurate (12.1% uncertainty) than electricity price forecasts (199% uncertainty). This difference in accuracy most likely comes from electricity's greater price ups and downs, hourly pricing changes, and sensitivity to multiple factors such as weather. Gas prices change more gradually and respond more predictably to the market, making them significantly easier to forecast accurately.
+
+## Additional Question
+
+How do energy consumption patterns differ between business and non businesses/consumers over time?
+
+```{r}
+# Module 3-4: Filtering Joins and Other Joins
+# Filter train data to focus on consumption only
+consumption_data <- train %>%
+  filter(is_consumption == TRUE) %>%
+  # Convert datetime to date for daily aggregation
+  mutate(date = as_date(datetime))
+
+# Aggregate consumption by date and business type
+daily_consumption <- consumption_data %>%
+  group_by(date, is_business) %>%
+  summarize(total_consumption = sum(target, na.rm = TRUE))
+
+# Convert to business type factor for better labels
+daily_consumption <- daily_consumption %>%
+  mutate(customer_type = case_when(
+    is_business == TRUE ~ "Business",
+    is_business == FALSE ~ "Consumer",
+    TRUE ~ "Unknown"
+  ))
+
+# Visualize consumption patterns
+ggplot(daily_consumption, aes(x = date, y = total_consumption, color = customer_type)) +
+  geom_line() +
+  scale_y_log10(labels = comma) +  # Log scale to handle wide range
+  labs(title = "Energy Consumption Patterns: Business vs. Consumer",
+       x = "Date",
+       y = "Total Daily Consumption (Log Scale)",
+       color = "Customer Type") +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1")
+```
+
+I used filter to conditionally select rows where is_consumption is true and then focused the analysis on consumption patterns. Then I analyzed total energy consumption for businesses and non businesses/consumers, and then used a log scale to handle wide data ranges.
+
+Energy consumption patterns differ significantly between business and non businesses/consumers over time. Even on a log scale, the general level of consumption appears higher for businesses compared to consumers. Consumer consumption also shows a more significant seasonal pattern, with consumption generally peaking in the colder months (late winter/early spring like early 2023) and dipping significantly during the summer months (mid-2022). Business consumption also shows some differences between seasons but seems less pronounced compared to its overall level. Both groups' energy use changes a lot from day to day (or week to week), but the patterns look slightly different on the graph. Overall, non business/consumer consumption is generally lower and shows stronger seasonal trends, while business consumption is higher and relatively more consistent throughout the year, although both show a lot of changes.

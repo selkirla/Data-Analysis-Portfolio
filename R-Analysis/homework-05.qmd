@@ -1,0 +1,145 @@
+---
+title: "Homework-05"
+subtitle: "STAT 5732: Introduction to R for Data Science I"
+institute: The Ohio State University
+author: "Selin Kirbas"
+date: 2025-04-11
+execute:
+    echo: true
+knitr: 
+    opts_chunk:
+        message: false
+        warning: false
+format: 
+    html:
+        toc: true
+        embed-resources: true
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(palmerpenguins)
+library(ggplot2)
+library(lubridate)
+library(nycflights13)
+```
+
+## R4DS 26.2.8
+
+### Exercise 1
+
+#### Question
+Practice your `across()` skills by:
+
+### Exercise 1.1
+#### Question
+Computing the number of unique values in each column of `palmerpenguins::penguins`.
+
+#### Solution
+
+```{r}
+# Compute number of unique values
+unique_counts <- penguins %>%
+  summarise(across(everything(), ~ n_distinct(.)))
+
+unique_counts
+```
+
+The table shows the number of unique values for each column in the `penguins` dataset.
+
+### Exercise 1.2
+#### Question
+Computing the mean of every column in `mtcars`.
+
+#### Solution
+
+```{r}
+# Compute mean
+mean_values <- mtcars %>%
+  summarise(across(everything(), mean, na.rm = TRUE))
+
+mean_values
+```
+
+The table shows the mean of each column in the `mtcars` dataset, giving a summary of the central tendency for each variable.
+
+### Exercise 1.3
+#### Question
+Grouping `diamonds` by `cut`, `clarity`, and `color` then counting the number of observations and computing the mean of each numeric column.
+
+#### Solution
+
+```{r}
+# Group by cut, clarity, and color, then summarize
+diamonds_summary <- diamonds %>%
+  group_by(cut, clarity, color) %>%
+  summarise(across(where(is.numeric), list(mean = mean, count = ~ n()), .names = "{.col}_{.fn}"))
+
+diamonds_summary
+```
+
+The table above summarizes the `diamonds` dataset by `cut`, `clarity`, and `color`, showing the mean and count of each column.
+
+### Exercise 2
+
+#### Question
+What happens if you use a list of functions in `across()`, but don’t name them? How is the output named?
+
+#### Solution
+
+```{r}
+# Using a list of functions without naming them
+unnamed_functions <- mtcars %>%
+  summarise(across(everything(), list(mean, sd)))
+
+unnamed_functions
+```
+
+When using a list of functions in `across()` without naming them, the output columns are named by adding the function name to the original column name, separated by an underscore.
+
+### Exercise 3
+
+#### Question
+Adjust `expand_dates()` to automatically remove the date columns after they’ve been expanded. Do you need to embrace any arguments?
+
+#### Solution
+
+```{r}
+# Define expand_dates function
+expand_dates <- function(df, date_col) {
+  df %>%
+    mutate(year = year({{ date_col }}),
+           month = month({{ date_col }}),
+           day = day({{ date_col }})) %>%
+    select(-{{ date_col }})
+}
+
+flights_expanded <- expand_dates(flights, time_hour)
+head(flights_expanded)
+```
+
+The `expand_dates()` function now removes the original date column after expanding it into year, month, and day. Using `{{ }}` enables tidy evaluation of the column name.
+
+### Exercise 4
+
+#### Question
+Explain what each step of the pipeline in this function does. What special feature of `where()` are we taking advantage of?
+
+#### Solution
+
+```{r, eval=FALSE}
+show_missing <- function(df, group_vars, summary_vars = everything()) {
+  df |> 
+    group_by(pick({{ group_vars }})) |> 
+    summarize(
+      across({{ summary_vars }}, \(x) sum(is.na(x))),
+      .groups = "drop"
+    ) |>
+    select(where(\(x) any(x > 0)))
+}
+
+# Example usage (commented out to prevent execution)
+# nycflights13::flights |> show_missing(c(year, month, day))
+```
+
+The `show_missing()` function groups the data by specified variables, summarizes the number of missing values for each column, and selects only those columns where there is at least one missing value. The `where()` function is used to filter columns based on a condition, taking advantage of its ability to apply a function to each column and return only those that meet the criteria.
