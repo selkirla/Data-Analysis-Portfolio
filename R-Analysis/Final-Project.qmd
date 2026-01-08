@@ -4,7 +4,6 @@ subtitle: "STAT 5732: Introduction to R for Data Science I"
 institute: The Ohio State University
 author: "Selin Kirbas"
 date: 2025-04-21
-output: github_document
 execute:
     echo: true
 knitr: 
